@@ -1,11 +1,13 @@
-package com.mtsahakis.mediaprojectiondemo;
+package io.github.tyomitch.panel;
 
 
 import android.annotation.TargetApi;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
+import android.content.Intent;
 import android.os.Build;
 
 import androidx.annotation.NonNull;
@@ -16,8 +18,8 @@ import androidx.core.util.Pair;
 public class NotificationUtils {
 
     public static final int NOTIFICATION_ID = 1337;
-    private static final String NOTIFICATION_CHANNEL_ID = "com.mtsahakis.mediaprojectiondemo.app";
-    private static final String NOTIFICATION_CHANNEL_NAME = "com.mtsahakis.mediaprojectiondemo.app";
+    private static final String NOTIFICATION_CHANNEL_ID = "io.github.tyomitch.panel.app";
+    private static final String NOTIFICATION_CHANNEL_NAME = "io.github.tyomitch.panel.app";
 
     public static Pair<Integer, Notification> getNotification(@NonNull Context context) {
         createNotificationChannel(context);
@@ -43,6 +45,8 @@ public class NotificationUtils {
     }
 
     private static Notification createNotification(@NonNull Context context) {
+        Intent notifIntent = new Intent(context.getApplicationContext(), ScreenCaptureActivity.class);
+        notifIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK  | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID);
         builder.setSmallIcon(R.drawable.ic_camera);
         builder.setContentTitle(context.getString(R.string.app_name));
@@ -51,6 +55,7 @@ public class NotificationUtils {
         builder.setCategory(Notification.CATEGORY_SERVICE);
         builder.setPriority(Notification.PRIORITY_LOW);
         builder.setShowWhen(true);
+        builder.setContentIntent(PendingIntent.getActivity(context.getApplicationContext(), 0, notifIntent, 0));
         return builder.build();
     }
 

@@ -1,4 +1,4 @@
-package com.mtsahakis.mediaprojectiondemo;
+package io.github.tyomitch.panel;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
@@ -8,7 +8,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.PixelFormat;
+import android.graphics.Rect;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
 import android.media.Image;
@@ -23,9 +25,9 @@ import android.view.Display;
 import android.view.OrientationEventListener;
 import android.view.WindowManager;
 
-import java.io.File;
-import java.io.FileOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.Objects;
 
@@ -40,11 +42,10 @@ public class ScreenCaptureService extends Service {
     private static final String START = "START";
     private static final String STOP = "STOP";
     private static final String SCREENCAP_NAME = "screencap";
-
-    private static int IMAGES_PRODUCED;
+    private static final int WIDTH = 1280;
+    private static final int HEIGHT = 480;
 
     private MediaProjection mMediaProjection;
-    private String mStoreDir;
     private ImageReader mImageReader;
     private Handler mHandler;
     private Display mDisplay;
@@ -54,6 +55,8 @@ public class ScreenCaptureService extends Service {
     private int mHeight;
     private int mRotation;
     private OrientationChangeCallback mOrientationChangeCallback;
+    private ProjectionThread mProj;
+    private Bitmap canvas = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888);
 
     public static Intent getStartIntent(Context context, int resultCode, Intent data) {
         Intent intent = new Intent(context, ScreenCaptureService.class);
@@ -86,7 +89,6 @@ public class ScreenCaptureService extends Service {
         @Override
         public void onImageAvailable(ImageReader reader) {
 
-            FileOutputStream fos = null;
             Bitmap bitmap = null;
             try (Image image = mImageReader.acquireLatestImage()) {
                 if (image != null) {
@@ -100,29 +102,23 @@ public class ScreenCaptureService extends Service {
                     bitmap = Bitmap.createBitmap(mWidth + rowPadding / pixelStride, mHeight, Bitmap.Config.ARGB_8888);
                     bitmap.copyPixelsFromBuffer(buffer);
 
-                    // write bitmap to a file
-                    fos = new FileOutputStream(mStoreDir + "/myscreen_" + IMAGES_PRODUCED + ".png");
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 100, fos);
+                    int newWidth = mWidth * HEIGHT / mHeight;
+                    Rect src = new Rect(0, 0, mWidth, mHeight);
+                    Rect dst = new Rect(WIDTH/2-newWidth/2, 0, WIDTH/2+newWidth/2, HEIGHT);
+                    new Canvas(canvas).drawBitmap(bitmap, src, dst, null);
 
-                    IMAGES_PRODUCED++;
-                    Log.e(TAG, "captured image: " + IMAGES_PRODUCED);
+                    // write bitmap
+                    ByteArrayOutputStream os = new ByteArrayOutputStream();
+                    canvas.compress(Bitmap.CompressFormat.JPEG, 100, os);
+                    mProj.setData(os.toByteArray());
                 }
 
             } catch (Exception e) {
                 e.printStackTrace();
             } finally {
-                if (fos != null) {
-                    try {
-                        fos.close();
-                    } catch (IOException ioe) {
-                        ioe.printStackTrace();
-                    }
-                }
-
                 if (bitmap != null) {
                     bitmap.recycle();
                 }
-
             }
         }
     }
@@ -177,23 +173,6 @@ public class ScreenCaptureService extends Service {
     public void onCreate() {
         super.onCreate();
 
-        // create store dir
-        File externalFilesDir = getExternalFilesDir(null);
-        if (externalFilesDir != null) {
-            mStoreDir = externalFilesDir.getAbsolutePath() + "/screenshots/";
-            File storeDirectory = new File(mStoreDir);
-            if (!storeDirectory.exists()) {
-                boolean success = storeDirectory.mkdirs();
-                if (!success) {
-                    Log.e(TAG, "failed to create file storage directory.");
-                    stopSelf();
-                }
-            }
-        } else {
-            Log.e(TAG, "failed to create file storage directory, getExternalFilesDir is null.");
-            stopSelf();
-        }
-
         // start capture handling thread
         new Thread() {
             @Override
@@ -236,6 +215,8 @@ public class ScreenCaptureService extends Service {
                 WindowManager windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
                 mDisplay = windowManager.getDefaultDisplay();
 
+                mProj = new ProjectionThread((InetSocketAddress)data.getSerializableExtra("PANEL"));
+
                 // create virtual display depending on device width / height
                 createVirtualDisplay();
 
@@ -261,6 +242,9 @@ public class ScreenCaptureService extends Service {
                     }
                 }
             });
+        }
+        if (mProj != null) {
+            mProj.interrupt();
         }
     }
 
